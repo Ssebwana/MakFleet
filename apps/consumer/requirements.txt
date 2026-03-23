@@ -1,0 +1,5 @@
+kafka-python==2.0.2
+psycopg2-binary==2.9.9
+neo4j==5.28.1
+shapely==2.0.6
+python-dotenv==1.0.1

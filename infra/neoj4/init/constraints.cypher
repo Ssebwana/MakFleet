@@ -1,0 +1,17 @@
+CREATE CONSTRAINT bike_id_unique IF NOT EXISTS
+FOR (b:Bike) REQUIRE b.bike_id IS UNIQUE;
+
+CREATE CONSTRAINT driver_id_unique IF NOT EXISTS
+FOR (d:Driver) REQUIRE d.driver_id IS UNIQUE;
+
+CREATE CONSTRAINT trip_id_unique IF NOT EXISTS
+FOR (t:Trip) REQUIRE t.trip_id IS UNIQUE;
+
+CREATE CONSTRAINT event_id_unique IF NOT EXISTS
+FOR (e:Event) REQUIRE e.event_id IS UNIQUE;
+
+CREATE CONSTRAINT edge_id_unique IF NOT EXISTS
+FOR (c:CampusEdge) REQUIRE c.edge_id IS UNIQUE;
+
+CREATE CONSTRAINT zone_id_unique IF NOT EXISTS
+FOR (z:Zone) REQUIRE z.zone_id IS UNIQUE;
