@@ -31,11 +31,14 @@ const detailStatus = document.getElementById("detailStatus");
 
 let telemetryData = [];
 let latestPositionsData = [];
-let selectedBike = null;
+
+let selectedBikeData = null;
+let activeBikeFilter = null;
+
 let map;
 let markersLayer;
 let mapHasFitted = false;
-let selectedMarkerCoords = null;
+let markerRefs = {};
 
 function initMap() {
   if (map) return;
@@ -74,6 +77,29 @@ function markerColor(status) {
   return "#16a34a";
 }
 
+function alertTypeClass(type) {
+  const value = (type || "").toLowerCase();
+  if (value === "overspeed") return "alert-type-overspeed";
+  if (value === "long idle") return "alert-type-long-idle";
+  if (value === "stale telemetry") return "alert-type-stale-telemetry";
+  return "";
+}
+
+function alertBorderClass(type) {
+  const value = (type || "").toLowerCase();
+  if (value === "overspeed") return "alert-border-overspeed";
+  if (value === "long idle") return "alert-border-long-idle";
+  if (value === "stale telemetry") return "alert-border-stale-telemetry";
+  return "";
+}
+
+function alertSeverityClass(severity) {
+  const value = (severity || "").toLowerCase();
+  if (value === "high") return "alert-severity-high";
+  if (value === "medium") return "alert-severity-medium";
+  return "alert-severity-low";
+}
+
 function renderKpis(data) {
   kpiCards.innerHTML = data
     .map(
@@ -88,7 +114,37 @@ function renderKpis(data) {
     .join("");
 }
 
-function getFilteredTelemetry() {
+function updateDetailsPanel(row) {
+  if (!row) {
+    selectedBikeEmpty.classList.remove("hidden");
+    selectedBikeCard.classList.add("hidden");
+    filterBikeBtn.textContent = "Filter Table";
+    return;
+  }
+
+  selectedBikeEmpty.classList.add("hidden");
+  selectedBikeCard.classList.remove("hidden");
+
+  detailBike.textContent = row.bike ?? "N/A";
+  detailDriver.textContent = row.driver ?? "N/A";
+  detailTrip.textContent = row.trip ?? "N/A";
+  detailSpeed.textContent = `${row.speed ?? "N/A"} km/h`;
+  detailEngine.textContent = row.engine ?? "N/A";
+  detailZone.textContent = row.zone ?? "Unknown";
+  detailTime.textContent = row.ts ?? "N/A";
+  detailLat.textContent = row.latitude ?? "N/A";
+  detailLon.textContent = row.longitude ?? "N/A";
+
+  detailStatus.textContent = row.status ?? "Normal";
+  detailStatus.className = `status-badge ${statusClass(row.status)}`;
+
+  filterBikeBtn.textContent =
+    activeBikeFilter && activeBikeFilter === row.bike
+      ? "Remove Table Filter"
+      : "Filter Table";
+}
+
+function getVisibleTelemetry() {
   const q = searchInput.value.toLowerCase().trim();
 
   return telemetryData.filter((row) => {
@@ -105,9 +161,11 @@ function getFilteredTelemetry() {
       .toLowerCase()
       .includes(q);
 
-    const matchesSelectedBike = selectedBike ? row.bike === selectedBike : true;
+    const matchesBikeFilter = activeBikeFilter
+      ? row.bike === activeBikeFilter
+      : true;
 
-    return matchesSearch && matchesSelectedBike;
+    return matchesSearch && matchesBikeFilter;
   });
 }
 
@@ -115,7 +173,9 @@ function renderTelemetry(data) {
   telemetryTableBody.innerHTML = data
     .map(
       (row) => `
-      <tr class="${selectedBike && row.bike === selectedBike ? "selected-row" : ""}">
+      <tr class="${
+        selectedBikeData && row.bike === selectedBikeData.bike ? "selected-row" : ""
+      }">
         <td>${row.bike ?? "N/A"}</td>
         <td>${row.driver ?? "N/A"}</td>
         <td>${row.trip ?? "N/A"}</td>
@@ -139,12 +199,20 @@ function renderAlerts(data) {
   alertsList.innerHTML = data
     .map(
       (alert) => `
-      <div class="alert-item">
-        <h3>${alert.type} - ${alert.severity}</h3>
-        <p><strong>Bike:</strong> ${alert.bike}</p>
+      <div class="alert-item ${alertBorderClass(alert.type)}">
+        <div class="alert-top">
+          <div>
+            <h3>${alert.type}</h3>
+            <p><strong>Bike:</strong> ${alert.bike}</p>
+          </div>
+          <div class="alert-badges">
+            <span class="alert-type-badge ${alertTypeClass(alert.type)}">${alert.type}</span>
+            <span class="alert-severity-badge ${alertSeverityClass(alert.severity)}">${alert.severity}</span>
+          </div>
+        </div>
         <p><strong>Location:</strong> ${alert.location}</p>
         <p><strong>Time:</strong> ${alert.time}</p>
-        <p>${alert.note}</p>
+        <p class="alert-note">${alert.note}</p>
       </div>
     `
     )
@@ -177,47 +245,29 @@ function renderBarList(container, data, labelKey, valueKey) {
     .join("");
 }
 
-function updateDetailsPanel(row) {
-  if (!row) {
-    selectedBikeEmpty.classList.remove("hidden");
-    selectedBikeCard.classList.add("hidden");
-    return;
-  }
-
-  selectedBikeEmpty.classList.add("hidden");
-  selectedBikeCard.classList.remove("hidden");
-
-  detailBike.textContent = row.bike ?? "N/A";
-  detailDriver.textContent = row.driver ?? "N/A";
-  detailTrip.textContent = row.trip ?? "N/A";
-  detailSpeed.textContent = `${row.speed ?? "N/A"} km/h`;
-  detailEngine.textContent = row.engine ?? "N/A";
-  detailZone.textContent = row.zone ?? "Unknown";
-  detailTime.textContent = row.ts ?? "N/A";
-  detailLat.textContent = row.latitude ?? "N/A";
-  detailLon.textContent = row.longitude ?? "N/A";
-
-  detailStatus.textContent = row.status ?? "Normal";
-  detailStatus.className = `status-badge ${statusClass(row.status)}`;
-}
-
 function selectBike(row) {
-  selectedBike = row?.bike || null;
-  selectedMarkerCoords = row ? [Number(row.latitude), Number(row.longitude)] : null;
+  selectedBikeData = row;
   updateDetailsPanel(row);
-  renderTelemetry(getFilteredTelemetry());
+  renderTelemetry(getVisibleTelemetry());
+  renderMap(latestPositionsData);
+
+  const marker = markerRefs[row.bike];
+  if (marker) marker.openPopup();
 }
 
 function clearSelection() {
-  selectedBike = null;
-  selectedMarkerCoords = null;
+  selectedBikeData = null;
+  activeBikeFilter = null;
+  searchInput.value = "";
   updateDetailsPanel(null);
-  renderTelemetry(getFilteredTelemetry());
+  renderTelemetry(getVisibleTelemetry());
+  renderMap(latestPositionsData);
 }
 
 function renderMap(data) {
   initMap();
   markersLayer.clearLayers();
+  markerRefs = {};
 
   if (!data.length) {
     mapCount.textContent = "0 bikes on map";
@@ -232,7 +282,8 @@ function renderMap(data) {
 
     if (Number.isNaN(lat) || Number.isNaN(lon)) return;
 
-    const isSelected = selectedBike && row.bike === selectedBike;
+    const isSelected =
+      selectedBikeData && row.bike === selectedBikeData.bike;
 
     const marker = L.circleMarker([lat, lon], {
       radius: isSelected ? 11 : 8,
@@ -256,11 +307,10 @@ function renderMap(data) {
 
     marker.on("click", () => {
       selectBike(row);
-      marker.openPopup();
-      renderMap(latestPositionsData);
     });
 
     marker.addTo(markersLayer);
+    markerRefs[row.bike] = marker;
     bounds.push([lat, lon]);
   });
 
@@ -273,7 +323,7 @@ function renderMap(data) {
 }
 
 function applySearch() {
-  renderTelemetry(getFilteredTelemetry());
+  renderTelemetry(getVisibleTelemetry());
 }
 
 async function loadDashboard() {
@@ -294,21 +344,25 @@ async function loadDashboard() {
     telemetryData = telemetry;
     latestPositionsData = latestPositions;
 
+    if (selectedBikeData) {
+      const refreshedSelectedBike = latestPositionsData.find(
+        (item) => item.bike === selectedBikeData.bike
+      );
+      if (refreshedSelectedBike) {
+        selectedBikeData = refreshedSelectedBike;
+      } else {
+        selectedBikeData = null;
+        activeBikeFilter = null;
+      }
+    }
+
     renderKpis(kpis);
-    renderTelemetry(getFilteredTelemetry());
     renderAlerts(alerts);
     renderBarList(speedSeriesBox, speedSeries, "time", "speed");
     renderBarList(zoneTrafficBox, zoneTraffic, "zone", "trips");
+    updateDetailsPanel(selectedBikeData);
+    renderTelemetry(getVisibleTelemetry());
     renderMap(latestPositionsData);
-
-    if (selectedBike) {
-      const selectedRow = latestPositionsData.find((item) => item.bike === selectedBike);
-      if (selectedRow) {
-        updateDetailsPanel(selectedRow);
-      } else {
-        clearSelection();
-      }
-    }
 
     telemetryStatus.textContent = "Online";
     dbStatus.textContent = "Healthy";
@@ -323,19 +377,33 @@ async function loadDashboard() {
 
 refreshBtn.addEventListener("click", loadDashboard);
 searchInput.addEventListener("input", applySearch);
+
 clearSelectionBtn.addEventListener("click", clearSelection);
 
 focusBikeBtn.addEventListener("click", () => {
-  if (selectedMarkerCoords && map) {
-    map.setView(selectedMarkerCoords, 17);
+  if (!selectedBikeData || !map) return;
+
+  const lat = Number(selectedBikeData.latitude);
+  const lon = Number(selectedBikeData.longitude);
+
+  if (!Number.isNaN(lat) && !Number.isNaN(lon)) {
+    map.setView([lat, lon], 17);
+    const marker = markerRefs[selectedBikeData.bike];
+    if (marker) marker.openPopup();
   }
 });
 
 filterBikeBtn.addEventListener("click", () => {
-  if (selectedBike) {
-    searchInput.value = selectedBike;
-    applySearch();
+  if (!selectedBikeData) return;
+
+  if (activeBikeFilter === selectedBikeData.bike) {
+    activeBikeFilter = null;
+  } else {
+    activeBikeFilter = selectedBikeData.bike;
   }
+
+  updateDetailsPanel(selectedBikeData);
+  renderTelemetry(getVisibleTelemetry());
 });
 
 initMap();

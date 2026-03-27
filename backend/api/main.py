@@ -14,6 +14,9 @@ DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "postgres")
 
 SPEED_ALERT_THRESHOLD = float(os.getenv("SPEED_ALERT_THRESHOLD", "43"))
+IDLE_SPEED_THRESHOLD = float(os.getenv("IDLE_SPEED_THRESHOLD", "2"))
+IDLE_ALERT_MINUTES = int(os.getenv("IDLE_ALERT_MINUTES", "3"))
+STALE_ALERT_MINUTES = int(os.getenv("STALE_ALERT_MINUTES", "5"))
 
 if not DB_PASSWORD:
     raise ValueError("DB_PASSWORD is not set.")
@@ -29,7 +32,7 @@ DATABASE_URL = URL.create(
 
 engine = create_engine(DATABASE_URL, future=True)
 
-app = FastAPI(title="MakFleet API", version="1.1.0")
+app = FastAPI(title="MakFleet API", version="1.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -190,34 +193,141 @@ def get_telemetry(limit: int = 100):
 
 @app.get("/api/alerts")
 def get_alerts(limit: int = 20):
-    zone_select, zone_join = zone_parts()
+    zone_select, zone_join = zone_parts("rt", "ee")
+
+    driver_expr = (
+        f"rt.{DRIVER_COL}::text AS driver" if DRIVER_COL else "'N/A' AS driver"
+    )
+    trip_expr = f"rt.{TRIP_COL}::text AS trip" if TRIP_COL else "'N/A' AS trip"
+    engine_expr = (
+        f"rt.{ENGINE_COL}::text AS engine" if ENGINE_COL else "'UNKNOWN' AS engine"
+    )
+    idle_condition = (
+        f"UPPER(rt.{ENGINE_COL}::text) = 'IDLE' AND COALESCE(rt.{SPEED_COL}, 0) <= :idle_speed_threshold"
+        if ENGINE_COL
+        else f"COALESCE(rt.{SPEED_COL}, 0) <= :idle_speed_threshold"
+    )
 
     sql = f"""
-        SELECT
-            rt.event_id::text AS id,
-            'Overspeed' AS type,
-            'High' AS severity,
-            rt.{BIKE_COL}::text AS bike,
-            {zone_select},
-            rt.{TS_COL} AS time,
-            CONCAT(
-                'Speed reached ',
-                ROUND(rt.{SPEED_COL}::numeric, 1),
-                ' km/h which exceeded threshold.'
-            ) AS note
-        FROM {RAW_TABLE} rt
-        {zone_join}
-        WHERE rt.{SPEED_COL} >= :speed_threshold
-        ORDER BY rt.{TS_COL} DESC
+        WITH latest_per_bike AS (
+            SELECT DISTINCT ON (rt.{BIKE_COL})
+                rt.{BIKE_COL}::text AS bike,
+                {driver_expr},
+                {trip_expr},
+                ROUND(rt.{SPEED_COL}::numeric, 1) AS speed,
+                {engine_expr},
+                {zone_select},
+                rt.{TS_COL} AS ts
+            FROM {RAW_TABLE} rt
+            {zone_join}
+            ORDER BY rt.{BIKE_COL}, rt.{TS_COL} DESC
+        ),
+        overspeed_alerts AS (
+            SELECT
+                'OS-' || bike AS id,
+                'Overspeed' AS type,
+                CASE
+                    WHEN speed >= (:speed_threshold * 1.20) THEN 'High'
+                    ELSE 'Medium'
+                END AS severity,
+                bike,
+                zone AS location,
+                ts AS event_time,
+                CONCAT(
+                    'Bike reached ',
+                    speed,
+                    ' km/h, exceeding the configured threshold of ',
+                    :speed_threshold,
+                    ' km/h.'
+                ) AS note
+            FROM latest_per_bike
+            WHERE speed >= :speed_threshold
+        ),
+        idle_stats AS (
+            SELECT
+                rt.{BIKE_COL}::text AS bike,
+                MIN(rt.{TS_COL}) AS idle_start,
+                MAX(rt.{TS_COL}) AS idle_end,
+                COUNT(*) AS idle_points
+            FROM {RAW_TABLE} rt
+            WHERE {idle_condition}
+              AND rt.{TS_COL} >= NOW() - (:idle_window_minutes * INTERVAL '1 minute')
+            GROUP BY rt.{BIKE_COL}
+        ),
+        idle_alerts AS (
+            SELECT
+                'ID-' || lb.bike AS id,
+                'Long Idle' AS type,
+                CASE
+                    WHEN EXTRACT(EPOCH FROM (i.idle_end - i.idle_start)) / 60.0 >= (:idle_alert_minutes * 2)
+                        THEN 'High'
+                    ELSE 'Medium'
+                END AS severity,
+                lb.bike,
+                lb.zone AS location,
+                lb.ts AS event_time,
+                CONCAT(
+                    'Bike has remained idle for about ',
+                    ROUND(EXTRACT(EPOCH FROM (i.idle_end - i.idle_start)) / 60.0, 1),
+                    ' minutes.'
+                ) AS note
+            FROM idle_stats i
+            JOIN latest_per_bike lb
+              ON lb.bike = i.bike
+            WHERE EXTRACT(EPOCH FROM (i.idle_end - i.idle_start)) / 60.0 >= :idle_alert_minutes
+              AND UPPER(lb.engine) = 'IDLE'
+              AND COALESCE(lb.speed, 0) <= :idle_speed_threshold
+        ),
+        stale_alerts AS (
+            SELECT
+                'ST-' || bike AS id,
+                'Stale Telemetry' AS type,
+                CASE
+                    WHEN EXTRACT(EPOCH FROM (NOW() - ts)) / 60.0 >= (:stale_alert_minutes * 2)
+                        THEN 'High'
+                    ELSE 'Medium'
+                END AS severity,
+                bike,
+                zone AS location,
+                ts AS event_time,
+                CONCAT(
+                    'No fresh telemetry for about ',
+                    ROUND(EXTRACT(EPOCH FROM (NOW() - ts)) / 60.0, 1),
+                    ' minutes.'
+                ) AS note
+            FROM latest_per_bike
+            WHERE EXTRACT(EPOCH FROM (NOW() - ts)) / 60.0 >= :stale_alert_minutes
+        )
+        SELECT *
+        FROM (
+            SELECT * FROM overspeed_alerts
+            UNION ALL
+            SELECT * FROM idle_alerts
+            UNION ALL
+            SELECT * FROM stale_alerts
+        ) all_alerts
+        ORDER BY event_time DESC NULLS LAST
         LIMIT :limit
     """
-    df = read_sql_df(
-        sql, {"limit": limit, "speed_threshold": SPEED_ALERT_THRESHOLD}
-    )
-    df["time"] = pd.to_datetime(df["time"], errors="coerce").dt.strftime(
+
+    params = {
+        "limit": limit,
+        "speed_threshold": SPEED_ALERT_THRESHOLD,
+        "idle_speed_threshold": IDLE_SPEED_THRESHOLD,
+        "idle_alert_minutes": IDLE_ALERT_MINUTES,
+        "idle_window_minutes": max(IDLE_ALERT_MINUTES * 3, 10),
+        "stale_alert_minutes": STALE_ALERT_MINUTES,
+    }
+
+    df = read_sql_df(sql, params)
+
+    if df.empty:
+        return []
+
+    df["time"] = pd.to_datetime(df["event_time"], errors="coerce").dt.strftime(
         "%Y-%m-%d %H:%M:%S"
     )
-    df = df.rename(columns={"zone": "location"})
+    df = df.drop(columns=["event_time"])
     return df.fillna("N/A").to_dict(orient="records")
 
 
