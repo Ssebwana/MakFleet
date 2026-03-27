@@ -1,0 +1,50 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Gate to Library",
+        "edge_type": "road",
+        "speed_limit_kmh": 25
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [32.5680, 0.3344],
+          [32.5685, 0.3348]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Library to Hostel",
+        "edge_type": "road",
+        "speed_limit_kmh": 20
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [32.5685, 0.3348],
+          [32.5690, 0.3352]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Library Footpath",
+        "edge_type": "footpath",
+        "speed_limit_kmh": 10
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [32.5683, 0.3346],
+          [32.5687, 0.3349]
+        ]
+      }
+    }
+  ]
+}

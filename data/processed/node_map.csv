@@ -1,0 +1,4 @@
+node_id,node_name,node_type,node_idx
+1,Main Gate,gate,0
+2,Library Junction,junction,1
+3,Hostel Area,hostel,2

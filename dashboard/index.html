@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MakFleet Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>MakFleet Operations Dashboard</h1>
+      <p>Real-time campus fleet monitoring</p>
+    </div>
+    <div class="topbar-actions">
+      <button id="refreshBtn">Refresh</button>
+      <span id="lastUpdated">Waiting for data...</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="cards" id="kpiCards">
+      <div class="card"><h3>Active Bikes</h3><p>--</p></div>
+      <div class="card"><h3>Live Trips</h3><p>--</p></div>
+      <div class="card"><h3>Average Speed</h3><p>--</p></div>
+      <div class="card"><h3>Critical Alerts</h3><p>--</p></div>
+    </section>
+
+    <section class="map-layout">
+      <div class="panel map-panel">
+        <div class="panel-header">
+          <h2>Live Fleet Map</h2>
+          <span id="mapCount" class="mini-note">0 bikes on map</span>
+        </div>
+        <div id="liveMap"></div>
+        <div class="map-legend">
+          <span><i class="dot green"></i> Normal</span>
+          <span><i class="dot blue"></i> Watch</span>
+          <span><i class="dot orange"></i> Idle</span>
+          <span><i class="dot red"></i> Overspeed</span>
+        </div>
+      </div>
+
+      <div class="panel details-panel">
+        <div class="panel-header">
+          <h2>Selected Bike Details</h2>
+          <button id="clearSelectionBtn" class="secondary-btn">Clear</button>
+        </div>
+
+        <div id="selectedBikeEmpty" class="empty-state">
+          Click a bike marker on the map to view details here.
+        </div>
+
+        <div id="selectedBikeCard" class="bike-details hidden">
+          <div class="detail-top">
+            <div>
+              <p class="detail-label">Bike</p>
+              <h3 id="detailBike">--</h3>
+            </div>
+            <span id="detailStatus" class="status-badge status-normal">Normal</span>
+          </div>
+
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">Driver</span>
+              <strong id="detailDriver">--</strong>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Trip</span>
+              <strong id="detailTrip">--</strong>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Speed</span>
+              <strong id="detailSpeed">--</strong>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Engine</span>
+              <strong id="detailEngine">--</strong>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Zone</span>
+              <strong id="detailZone">--</strong>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Last Update</span>
+              <strong id="detailTime">--</strong>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Latitude</span>
+              <strong id="detailLat">--</strong>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Longitude</span>
+              <strong id="detailLon">--</strong>
+            </div>
+          </div>
+
+          <div class="detail-actions">
+            <button id="focusBikeBtn">Focus on Map</button>
+            <button id="filterBikeBtn" class="secondary-btn">Filter Table</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Live Telemetry</h2>
+        <input
+          type="text"
+          id="searchInput"
+          placeholder="Search bike, driver, trip, zone, status..."
+        />
+      </div>
+
+      <div class="table-wrap">
+        <table id="telemetryTable">
+          <thead>
+            <tr>
+              <th>Bike</th>
+              <th>Driver</th>
+              <th>Trip</th>
+              <th>Speed</th>
+              <th>Engine</th>
+              <th>Zone</th>
+              <th>Status</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+
+    <section class="grid-two">
+      <div class="panel">
+        <h2>Alerts</h2>
+        <div id="alertsList" class="alerts-list"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Zone Traffic</h2>
+        <div id="zoneTraffic" class="chart-list"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Speed Trend</h2>
+      <div id="speedSeries" class="chart-list"></div>
+    </section>
+
+    
+    <section class="panel">
+      <h2>System Status</h2>
+      <div class="status-grid">
+        <div class="status-box good">
+          <h3>Telemetry Stream</h3>
+          <p id="telemetryStatus">Checking...</p>
+        </div>
+        <div class="status-box info">
+          <h3>Database Sync</h3>
+          <p id="dbStatus">Checking...</p>
+        </div>
+        <div class="status-box warn">
+          <h3>Model Monitor</h3>
+          <p>Watch</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
