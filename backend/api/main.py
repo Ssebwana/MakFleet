@@ -32,7 +32,7 @@ DATABASE_URL = URL.create(
 
 engine = create_engine(DATABASE_URL, future=True)
 
-app = FastAPI(title="MakFleet API", version="1.2.0")
+app = FastAPI(title="MakFleet API", version="1.4.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -118,38 +118,88 @@ def root():
 
 @app.get("/api/kpis")
 def get_kpis():
-    live_trips_expr = f"COUNT(DISTINCT {TRIP_COL})" if TRIP_COL else "0"
+    engine_idle_expr = (
+        f"UPPER(latest.engine) = 'IDLE'"
+        if ENGINE_COL
+        else "FALSE"
+    )
+
+    trip_select = f"rt.{TRIP_COL}::text AS trip," if TRIP_COL else "'N/A' AS trip,"
+    engine_select = (
+        f"rt.{ENGINE_COL}::text AS engine," if ENGINE_COL else "'UNKNOWN' AS engine,"
+    )
+
     sql = f"""
+        WITH latest_per_bike AS (
+            SELECT DISTINCT ON (rt.{BIKE_COL})
+                rt.{BIKE_COL}::text AS bike,
+                {trip_select}
+                {engine_select}
+                ROUND(rt.{SPEED_COL}::numeric, 1) AS speed,
+                rt.{TS_COL} AS ts
+            FROM {RAW_TABLE} rt
+            ORDER BY rt.{BIKE_COL}, rt.{TS_COL} DESC
+        )
         SELECT
-            COUNT(DISTINCT {BIKE_COL}) AS active_bikes,
-            {live_trips_expr} AS live_trips,
-            ROUND(AVG({SPEED_COL})::numeric, 1) AS average_speed,
-            SUM(CASE WHEN {SPEED_COL} >= :speed_threshold THEN 1 ELSE 0 END) AS critical_alerts
-        FROM {RAW_TABLE}
+            COUNT(*) AS active_bikes,
+            SUM(
+                CASE
+                    WHEN {engine_idle_expr}
+                     AND COALESCE(latest.speed, 0) <= :idle_speed_threshold
+                    THEN 1 ELSE 0
+                END
+            ) AS idle_bikes,
+            SUM(
+                CASE
+                    WHEN EXTRACT(EPOCH FROM (NOW() - latest.ts)) / 60.0 >= :stale_alert_minutes
+                    THEN 1 ELSE 0
+                END
+            ) AS stale_bikes,
+            SUM(
+                CASE
+                    WHEN COALESCE(latest.speed, 0) >= :speed_threshold THEN 1
+                    WHEN {engine_idle_expr}
+                     AND COALESCE(latest.speed, 0) <= :idle_speed_threshold
+                     AND EXTRACT(EPOCH FROM (NOW() - latest.ts)) / 60.0 >= :idle_alert_minutes
+                    THEN 1
+                    WHEN EXTRACT(EPOCH FROM (NOW() - latest.ts)) / 60.0 >= :stale_alert_minutes
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS critical_alerts
+        FROM latest_per_bike latest
     """
-    df = read_sql_df(sql, {"speed_threshold": SPEED_ALERT_THRESHOLD})
+
+    params = {
+        "speed_threshold": SPEED_ALERT_THRESHOLD,
+        "idle_speed_threshold": IDLE_SPEED_THRESHOLD,
+        "idle_alert_minutes": IDLE_ALERT_MINUTES,
+        "stale_alert_minutes": STALE_ALERT_MINUTES,
+    }
+
+    df = read_sql_df(sql, params)
     row = df.iloc[0]
 
     return [
         {
-            "label": "Active Bikes",
+            "label": "Active Bikes Now",
             "value": int(row["active_bikes"] or 0),
-            "hint": "Distinct bikes in telemetry",
+            "hint": "Latest reporting bikes",
         },
         {
-            "label": "Live Trips",
-            "value": int(row["live_trips"] or 0),
-            "hint": "Distinct trips in telemetry",
+            "label": "Idle Bikes Now",
+            "value": int(row["idle_bikes"] or 0),
+            "hint": f"Engine idle and speed ≤ {IDLE_SPEED_THRESHOLD} km/h",
         },
         {
-            "label": "Average Speed",
-            "value": f"{float(row['average_speed'] or 0):.1f} km/h",
-            "hint": "Average current speed",
+            "label": "Stale Bikes",
+            "value": int(row["stale_bikes"] or 0),
+            "hint": f"No fresh telemetry in {STALE_ALERT_MINUTES}+ min",
         },
         {
-            "label": "Critical Alerts",
+            "label": "Critical Alerts Now",
             "value": int(row["critical_alerts"] or 0),
-            "hint": "Speed threshold breaches",
+            "hint": "Overspeed, long idle, or stale",
         },
     ]
 
@@ -403,6 +453,61 @@ def get_latest_positions():
         ORDER BY rt.{BIKE_COL}, rt.{TS_COL} DESC
     """
     df = read_sql_df(sql, {"speed_threshold": SPEED_ALERT_THRESHOLD})
+    df["ts"] = pd.to_datetime(df["ts"], errors="coerce").dt.strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    return df.fillna("N/A").to_dict(orient="records")
+
+
+@app.get("/api/bike-history/{bike_id}")
+def get_bike_history(bike_id: str, limit: int = 30):
+    if not LAT_COL or not LON_COL:
+        return []
+
+    zone_select, zone_join = zone_parts()
+
+    driver_expr = (
+        f"rt.{DRIVER_COL}::text AS driver," if DRIVER_COL else "'N/A' AS driver,"
+    )
+    trip_expr = f"rt.{TRIP_COL}::text AS trip," if TRIP_COL else "'N/A' AS trip,"
+    engine_expr = (
+        f"rt.{ENGINE_COL}::text AS engine," if ENGINE_COL else "'UNKNOWN' AS engine,"
+    )
+
+    sql = f"""
+        SELECT
+            rt.{BIKE_COL}::text AS bike,
+            {driver_expr}
+            {trip_expr}
+            ROUND(rt.{SPEED_COL}::numeric, 1) AS speed,
+            {engine_expr}
+            rt.{LAT_COL} AS latitude,
+            rt.{LON_COL} AS longitude,
+            {zone_select},
+            {status_case("rt")} AS status,
+            rt.{TS_COL} AS ts
+        FROM {RAW_TABLE} rt
+        {zone_join}
+        WHERE rt.{BIKE_COL}::text = :bike_id
+          AND rt.{LAT_COL} IS NOT NULL
+          AND rt.{LON_COL} IS NOT NULL
+        ORDER BY rt.{TS_COL} DESC
+        LIMIT :limit
+    """
+
+    df = read_sql_df(
+        sql,
+        {
+            "bike_id": bike_id,
+            "limit": limit,
+            "speed_threshold": SPEED_ALERT_THRESHOLD,
+        },
+    )
+
+    if df.empty:
+        return []
+
+    df = df.sort_values("ts")
     df["ts"] = pd.to_datetime(df["ts"], errors="coerce").dt.strftime(
         "%Y-%m-%d %H:%M:%S"
     )
