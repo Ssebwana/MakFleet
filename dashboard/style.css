@@ -76,6 +76,7 @@ body {
 
 .card h3,
 .panel h2,
+.panel h3,
 .status-box h3 {
   margin-top: 0;
 }
@@ -88,7 +89,7 @@ body {
 
 .map-layout {
   display: grid;
-  grid-template-columns: 1.5fr 0.9fr;
+  grid-template-columns: 1.5fr 0.95fr;
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -166,6 +167,10 @@ body {
   background: #dc2626;
 }
 
+.black {
+  background: #111827;
+}
+
 .hidden {
   display: none;
 }
@@ -174,6 +179,10 @@ body {
   color: #64748b;
   font-size: 14px;
   padding: 20px 0;
+}
+
+.small-empty {
+  padding: 10px 0;
 }
 
 .detail-top {
@@ -196,7 +205,8 @@ body {
   letter-spacing: 0.4px;
 }
 
-.detail-grid {
+.detail-grid,
+.route-summary-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
@@ -219,6 +229,18 @@ body {
   gap: 10px;
   margin-top: 18px;
   flex-wrap: wrap;
+}
+
+.route-history-box {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.route-table-wrap {
+  margin-top: 14px;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .chart-list {
@@ -255,6 +277,10 @@ table {
   width: 100%;
   border-collapse: collapse;
   min-width: 900px;
+}
+
+#routeHistoryTable {
+  min-width: 100%;
 }
 
 thead {
@@ -428,7 +454,8 @@ tr.selected-row {
 @media (max-width: 1000px) {
   .map-layout,
   .grid-two,
-  .detail-grid {
+  .detail-grid,
+  .route-summary-grid {
     grid-template-columns: 1fr;
   }
 

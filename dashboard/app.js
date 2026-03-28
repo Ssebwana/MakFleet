@@ -29,14 +29,24 @@ const detailLat = document.getElementById("detailLat");
 const detailLon = document.getElementById("detailLon");
 const detailStatus = document.getElementById("detailStatus");
 
+const routePointCount = document.getElementById("routePointCount");
+const routeStartTime = document.getElementById("routeStartTime");
+const routeEndTime = document.getElementById("routeEndTime");
+const routeMaxSpeed = document.getElementById("routeMaxSpeed");
+const routeAvgSpeed = document.getElementById("routeAvgSpeed");
+const routeHistoryEmpty = document.getElementById("routeHistoryEmpty");
+const routeHistoryTableBody = document.querySelector("#routeHistoryTable tbody");
+
 let telemetryData = [];
 let latestPositionsData = [];
+let routeHistoryData = [];
 
 let selectedBikeData = null;
 let activeBikeFilter = null;
 
 let map;
 let markersLayer;
+let routeLayer;
 let mapHasFitted = false;
 let markerRefs = {};
 
@@ -51,6 +61,7 @@ function initMap() {
   }).addTo(map);
 
   markersLayer = L.layerGroup().addTo(map);
+  routeLayer = L.layerGroup().addTo(map);
 }
 
 async function fetchJSON(url) {
@@ -245,7 +256,116 @@ function renderBarList(container, data, labelKey, valueKey) {
     .join("");
 }
 
-function selectBike(row) {
+function renderRouteHistoryTable(data) {
+  if (!data.length) {
+    routeHistoryEmpty.classList.remove("hidden");
+    routeHistoryTableBody.innerHTML = "";
+    routePointCount.textContent = "0 points";
+    routeStartTime.textContent = "--";
+    routeEndTime.textContent = "--";
+    routeMaxSpeed.textContent = "--";
+    routeAvgSpeed.textContent = "--";
+    return;
+  }
+
+  routeHistoryEmpty.classList.add("hidden");
+
+  routeHistoryTableBody.innerHTML = data
+    .map(
+      (row) => `
+      <tr>
+        <td>${row.ts ?? "N/A"}</td>
+        <td>${row.speed ?? "N/A"} km/h</td>
+        <td>${row.zone ?? "Unknown"}</td>
+        <td><span class="status-badge ${statusClass(row.status)}">${row.status ?? "Normal"}</span></td>
+      </tr>
+    `
+    )
+    .join("");
+
+  routePointCount.textContent = `${data.length} points`;
+  routeStartTime.textContent = data[0]?.ts ?? "--";
+  routeEndTime.textContent = data[data.length - 1]?.ts ?? "--";
+
+  const speeds = data
+    .map((item) => Number(item.speed))
+    .filter((value) => !Number.isNaN(value));
+
+  if (speeds.length) {
+    const maxSpeed = Math.max(...speeds);
+    const avgSpeed = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+    routeMaxSpeed.textContent = `${maxSpeed.toFixed(1)} km/h`;
+    routeAvgSpeed.textContent = `${avgSpeed.toFixed(1)} km/h`;
+  } else {
+    routeMaxSpeed.textContent = "--";
+    routeAvgSpeed.textContent = "--";
+  }
+}
+
+function drawRouteOnMap(data) {
+  routeLayer.clearLayers();
+
+  if (!data.length) return;
+
+  const points = data
+    .map((row) => [Number(row.latitude), Number(row.longitude)])
+    .filter(([lat, lon]) => !Number.isNaN(lat) && !Number.isNaN(lon));
+
+  if (points.length < 2) {
+    if (points.length === 1) {
+      L.circleMarker(points[0], {
+        radius: 6,
+        color: "#111827",
+        fillColor: "#111827",
+        fillOpacity: 0.9,
+      }).addTo(routeLayer);
+    }
+    return;
+  }
+
+  const routeLine = L.polyline(points, {
+    color: "#111827",
+    weight: 4,
+    opacity: 0.85,
+  }).addTo(routeLayer);
+
+  L.circleMarker(points[0], {
+    radius: 6,
+    color: "#16a34a",
+    fillColor: "#16a34a",
+    fillOpacity: 1,
+  })
+    .bindPopup("Route start")
+    .addTo(routeLayer);
+
+  L.circleMarker(points[points.length - 1], {
+    radius: 6,
+    color: "#dc2626",
+    fillColor: "#dc2626",
+    fillOpacity: 1,
+  })
+    .bindPopup("Route end")
+    .addTo(routeLayer);
+
+  map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+}
+
+async function loadBikeHistory(bikeId) {
+  try {
+    const data = await fetchJSON(`${API_BASE}/bike-history/${encodeURIComponent(bikeId)}`);
+    routeHistoryData = data;
+    renderRouteHistoryTable(routeHistoryData);
+    drawRouteOnMap(routeHistoryData);
+  } catch (error) {
+    console.error(error);
+    routeHistoryEmpty.classList.remove("hidden");
+    routeHistoryEmpty.textContent = "Failed to load route history.";
+    routeHistoryTableBody.innerHTML = "";
+    routeLayer.clearLayers();
+  }
+}
+
+async function selectBike(row) {
   selectedBikeData = row;
   updateDetailsPanel(row);
   renderTelemetry(getVisibleTelemetry());
@@ -253,15 +373,20 @@ function selectBike(row) {
 
   const marker = markerRefs[row.bike];
   if (marker) marker.openPopup();
+
+  await loadBikeHistory(row.bike);
 }
 
 function clearSelection() {
   selectedBikeData = null;
   activeBikeFilter = null;
   searchInput.value = "";
+  routeHistoryData = [];
   updateDetailsPanel(null);
   renderTelemetry(getVisibleTelemetry());
   renderMap(latestPositionsData);
+  renderRouteHistoryTable([]);
+  routeLayer.clearLayers();
 }
 
 function renderMap(data) {
@@ -305,8 +430,8 @@ function renderMap(data) {
       </div>
     `);
 
-    marker.on("click", () => {
-      selectBike(row);
+    marker.on("click", async () => {
+      await selectBike(row);
     });
 
     marker.addTo(markersLayer);
@@ -353,6 +478,7 @@ async function loadDashboard() {
       } else {
         selectedBikeData = null;
         activeBikeFilter = null;
+        routeHistoryData = [];
       }
     }
 
@@ -363,6 +489,11 @@ async function loadDashboard() {
     updateDetailsPanel(selectedBikeData);
     renderTelemetry(getVisibleTelemetry());
     renderMap(latestPositionsData);
+
+    if (!selectedBikeData) {
+      renderRouteHistoryTable([]);
+      routeLayer.clearLayers();
+    }
 
     telemetryStatus.textContent = "Online";
     dbStatus.textContent = "Healthy";
@@ -408,5 +539,6 @@ filterBikeBtn.addEventListener("click", () => {
 
 initMap();
 updateDetailsPanel(null);
+renderRouteHistoryTable([]);
 loadDashboard();
 setInterval(loadDashboard, 15000);

@@ -24,10 +24,10 @@
 
   <main class="container">
     <section class="cards" id="kpiCards">
-      <div class="card"><h3>Active Bikes</h3><p>--</p></div>
-      <div class="card"><h3>Live Trips</h3><p>--</p></div>
-      <div class="card"><h3>Average Speed</h3><p>--</p></div>
-      <div class="card"><h3>Critical Alerts</h3><p>--</p></div>
+      <div class="card"><h3>Active Bikes Now</h3><p>--</p></div>
+      <div class="card"><h3>Idle Bikes Now</h3><p>--</p></div>
+      <div class="card"><h3>Stale Bikes</h3><p>--</p></div>
+      <div class="card"><h3>Critical Alerts Now</h3><p>--</p></div>
     </section>
 
     <section class="map-layout">
@@ -42,6 +42,7 @@
           <span><i class="dot blue"></i> Watch</span>
           <span><i class="dot orange"></i> Idle</span>
           <span><i class="dot red"></i> Overspeed</span>
+          <span><i class="dot black"></i> Route History</span>
         </div>
       </div>
 
@@ -52,7 +53,7 @@
         </div>
 
         <div id="selectedBikeEmpty" class="empty-state">
-          Click a bike marker on the map to view details here.
+          Click a bike marker on the map to view details and route history here.
         </div>
 
         <div id="selectedBikeCard" class="bike-details hidden">
@@ -103,9 +104,71 @@
             <button id="focusBikeBtn">Focus on Map</button>
             <button id="filterBikeBtn" class="secondary-btn">Filter Table</button>
           </div>
+
+          <div class="route-history-box">
+            <div class="panel-header">
+              <h3>Route History</h3>
+              <span id="routePointCount" class="mini-note">0 points</span>
+            </div>
+
+            <div class="route-summary-grid">
+              <div class="detail-item">
+                <span class="detail-label">Start Time</span>
+                <strong id="routeStartTime">--</strong>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">End Time</span>
+                <strong id="routeEndTime">--</strong>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Max Speed</span>
+                <strong id="routeMaxSpeed">--</strong>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Average Speed</span>
+                <strong id="routeAvgSpeed">--</strong>
+              </div>
+            </div>
+
+            <div id="routeHistoryEmpty" class="empty-state small-empty">
+              Select a bike to load its recent route history.
+            </div>
+
+            <div class="table-wrap route-table-wrap">
+              <table id="routeHistoryTable">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Speed</th>
+                    <th>Zone</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </section>
+
+    <section class="grid-two">
+      <div class="panel">
+        <h2>Alerts</h2>
+        <div id="alertsList" class="alerts-list"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Zone Traffic</h2>
+        <div id="zoneTraffic" class="chart-list"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Speed Trend</h2>
+      <div id="speedSeries" class="chart-list"></div>
+    </section>
+
     <section class="panel">
       <div class="panel-header">
         <h2>Live Telemetry</h2>
@@ -135,25 +198,6 @@
       </div>
     </section>
 
-
-    <section class="grid-two">
-      <div class="panel">
-        <h2>Alerts</h2>
-        <div id="alertsList" class="alerts-list"></div>
-      </div>
-
-      <div class="panel">
-        <h2>Zone Traffic</h2>
-        <div id="zoneTraffic" class="chart-list"></div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>Speed Trend</h2>
-      <div id="speedSeries" class="chart-list"></div>
-    </section>
-
-    
     <section class="panel">
       <h2>System Status</h2>
       <div class="status-grid">
