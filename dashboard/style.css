@@ -231,13 +231,16 @@ body {
   flex-wrap: wrap;
 }
 
-.route-history-box {
+.route-history-box,
+.zone-history-box {
   margin-top: 22px;
   padding-top: 18px;
   border-top: 1px solid #e5e7eb;
 }
 
-.route-table-wrap {
+.route-table-wrap,
+.zone-table-wrap,
+.zone-events-wrap {
   margin-top: 14px;
   max-height: 260px;
   overflow-y: auto;
@@ -279,7 +282,9 @@ table {
   min-width: 900px;
 }
 
-#routeHistoryTable {
+#routeHistoryTable,
+#bikeZoneHistoryTable,
+#zoneEventsTable {
   min-width: 100%;
 }
 
@@ -365,7 +370,8 @@ tr.selected-row {
 }
 
 .alert-type-badge,
-.alert-severity-badge {
+.alert-severity-badge,
+.zone-badge {
   display: inline-block;
   border-radius: 999px;
   padding: 5px 10px;
@@ -386,6 +392,11 @@ tr.selected-row {
 .alert-type-stale-telemetry {
   background: #dbeafe;
   color: #1d4ed8;
+}
+
+.alert-type-restricted-zone {
+  background: #ede9fe;
+  color: #6d28d9;
 }
 
 .alert-severity-high {
@@ -415,8 +426,22 @@ tr.selected-row {
   border-left-color: #2563eb;
 }
 
+.alert-border-restricted-zone {
+  border-left-color: #6d28d9;
+}
+
 .alert-note {
   color: #475569;
+}
+
+.zone-badge-normal {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.zone-badge-restricted {
+  background: #ede9fe;
+  color: #6d28d9;
 }
 
 .status-grid {

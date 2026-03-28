@@ -37,9 +37,18 @@ const routeAvgSpeed = document.getElementById("routeAvgSpeed");
 const routeHistoryEmpty = document.getElementById("routeHistoryEmpty");
 const routeHistoryTableBody = document.querySelector("#routeHistoryTable tbody");
 
+const bikeZoneEventCount = document.getElementById("bikeZoneEventCount");
+const bikeZoneHistoryEmpty = document.getElementById("bikeZoneHistoryEmpty");
+const bikeZoneHistoryTableBody = document.querySelector("#bikeZoneHistoryTable tbody");
+
+const zoneEventsEmpty = document.getElementById("zoneEventsEmpty");
+const zoneEventsTableBody = document.querySelector("#zoneEventsTable tbody");
+
 let telemetryData = [];
 let latestPositionsData = [];
 let routeHistoryData = [];
+let bikeZoneHistoryData = [];
+let zoneEventsData = [];
 
 let selectedBikeData = null;
 let activeBikeFilter = null;
@@ -93,6 +102,7 @@ function alertTypeClass(type) {
   if (value === "overspeed") return "alert-type-overspeed";
   if (value === "long idle") return "alert-type-long-idle";
   if (value === "stale telemetry") return "alert-type-stale-telemetry";
+  if (value === "restricted zone") return "alert-type-restricted-zone";
   return "";
 }
 
@@ -101,6 +111,7 @@ function alertBorderClass(type) {
   if (value === "overspeed") return "alert-border-overspeed";
   if (value === "long idle") return "alert-border-long-idle";
   if (value === "stale telemetry") return "alert-border-stale-telemetry";
+  if (value === "restricted zone") return "alert-border-restricted-zone";
   return "";
 }
 
@@ -109,6 +120,14 @@ function alertSeverityClass(severity) {
   if (value === "high") return "alert-severity-high";
   if (value === "medium") return "alert-severity-medium";
   return "alert-severity-low";
+}
+
+function zoneBadgeClass(restricted) {
+  return restricted ? "zone-badge-restricted" : "zone-badge-normal";
+}
+
+function zoneBadgeText(restricted) {
+  return restricted ? "Restricted" : "Normal";
 }
 
 function renderKpis(data) {
@@ -302,6 +321,55 @@ function renderRouteHistoryTable(data) {
   }
 }
 
+function renderBikeZoneHistory(data) {
+  if (!data.length) {
+    bikeZoneHistoryEmpty.classList.remove("hidden");
+    bikeZoneHistoryTableBody.innerHTML = "";
+    bikeZoneEventCount.textContent = "0 transitions";
+    return;
+  }
+
+  bikeZoneHistoryEmpty.classList.add("hidden");
+  bikeZoneEventCount.textContent = `${data.length} transitions`;
+
+  bikeZoneHistoryTableBody.innerHTML = data
+    .map(
+      (row) => `
+      <tr>
+        <td>${row.ts ?? "N/A"}</td>
+        <td>${row.previous_zone ?? "Unknown"}</td>
+        <td>${row.current_zone ?? "Unknown"}</td>
+        <td><span class="zone-badge ${zoneBadgeClass(row.restricted_entry)}">${zoneBadgeText(row.restricted_entry)}</span></td>
+      </tr>
+    `
+    )
+    .join("");
+}
+
+function renderZoneEvents(data) {
+  if (!data.length) {
+    zoneEventsEmpty.classList.remove("hidden");
+    zoneEventsTableBody.innerHTML = "";
+    return;
+  }
+
+  zoneEventsEmpty.classList.add("hidden");
+
+  zoneEventsTableBody.innerHTML = data
+    .map(
+      (row) => `
+      <tr>
+        <td>${row.ts ?? "N/A"}</td>
+        <td>${row.bike ?? "N/A"}</td>
+        <td>${row.previous_zone ?? "Unknown"}</td>
+        <td>${row.current_zone ?? "Unknown"}</td>
+        <td><span class="zone-badge ${zoneBadgeClass(row.restricted_entry)}">${zoneBadgeText(row.restricted_entry)}</span></td>
+      </tr>
+    `
+    )
+    .join("");
+}
+
 function drawRouteOnMap(data) {
   routeLayer.clearLayers();
 
@@ -365,6 +433,19 @@ async function loadBikeHistory(bikeId) {
   }
 }
 
+async function loadBikeZoneHistory(bikeId) {
+  try {
+    const data = await fetchJSON(`${API_BASE}/bike-zone-history/${encodeURIComponent(bikeId)}`);
+    bikeZoneHistoryData = data;
+    renderBikeZoneHistory(bikeZoneHistoryData);
+  } catch (error) {
+    console.error(error);
+    bikeZoneHistoryEmpty.classList.remove("hidden");
+    bikeZoneHistoryEmpty.textContent = "Failed to load bike zone history.";
+    bikeZoneHistoryTableBody.innerHTML = "";
+  }
+}
+
 async function selectBike(row) {
   selectedBikeData = row;
   updateDetailsPanel(row);
@@ -374,7 +455,10 @@ async function selectBike(row) {
   const marker = markerRefs[row.bike];
   if (marker) marker.openPopup();
 
-  await loadBikeHistory(row.bike);
+  await Promise.all([
+    loadBikeHistory(row.bike),
+    loadBikeZoneHistory(row.bike),
+  ]);
 }
 
 function clearSelection() {
@@ -382,10 +466,12 @@ function clearSelection() {
   activeBikeFilter = null;
   searchInput.value = "";
   routeHistoryData = [];
+  bikeZoneHistoryData = [];
   updateDetailsPanel(null);
   renderTelemetry(getVisibleTelemetry());
   renderMap(latestPositionsData);
   renderRouteHistoryTable([]);
+  renderBikeZoneHistory([]);
   routeLayer.clearLayers();
 }
 
@@ -456,7 +542,7 @@ async function loadDashboard() {
     telemetryStatus.textContent = "Loading...";
     dbStatus.textContent = "Loading...";
 
-    const [kpis, telemetry, alerts, speedSeries, zoneTraffic, latestPositions] =
+    const [kpis, telemetry, alerts, speedSeries, zoneTraffic, latestPositions, zoneEvents] =
       await Promise.all([
         fetchJSON(`${API_BASE}/kpis`),
         fetchJSON(`${API_BASE}/telemetry`),
@@ -464,10 +550,12 @@ async function loadDashboard() {
         fetchJSON(`${API_BASE}/speed-series`),
         fetchJSON(`${API_BASE}/zone-traffic`),
         fetchJSON(`${API_BASE}/latest-positions`),
+        fetchJSON(`${API_BASE}/zone-events`),
       ]);
 
     telemetryData = telemetry;
     latestPositionsData = latestPositions;
+    zoneEventsData = zoneEvents;
 
     if (selectedBikeData) {
       const refreshedSelectedBike = latestPositionsData.find(
@@ -479,6 +567,7 @@ async function loadDashboard() {
         selectedBikeData = null;
         activeBikeFilter = null;
         routeHistoryData = [];
+        bikeZoneHistoryData = [];
       }
     }
 
@@ -486,12 +575,14 @@ async function loadDashboard() {
     renderAlerts(alerts);
     renderBarList(speedSeriesBox, speedSeries, "time", "speed");
     renderBarList(zoneTrafficBox, zoneTraffic, "zone", "trips");
+    renderZoneEvents(zoneEventsData);
     updateDetailsPanel(selectedBikeData);
     renderTelemetry(getVisibleTelemetry());
     renderMap(latestPositionsData);
 
     if (!selectedBikeData) {
       renderRouteHistoryTable([]);
+      renderBikeZoneHistory([]);
       routeLayer.clearLayers();
     }
 
@@ -540,5 +631,7 @@ filterBikeBtn.addEventListener("click", () => {
 initMap();
 updateDetailsPanel(null);
 renderRouteHistoryTable([]);
+renderBikeZoneHistory([]);
+renderZoneEvents([]);
 loadDashboard();
 setInterval(loadDashboard, 15000);

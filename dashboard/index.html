@@ -53,7 +53,7 @@
         </div>
 
         <div id="selectedBikeEmpty" class="empty-state">
-          Click a bike marker on the map to view details and route history here.
+          Click a bike marker on the map to view details, route history, and zone transitions here.
         </div>
 
         <div id="selectedBikeCard" class="bike-details hidden">
@@ -148,6 +148,31 @@
               </table>
             </div>
           </div>
+
+          <div class="zone-history-box">
+            <div class="panel-header">
+              <h3>Bike Zone Timeline</h3>
+              <span id="bikeZoneEventCount" class="mini-note">0 transitions</span>
+            </div>
+
+            <div id="bikeZoneHistoryEmpty" class="empty-state small-empty">
+              Select a bike to load its zone changes.
+            </div>
+
+            <div class="table-wrap zone-table-wrap">
+              <table id="bikeZoneHistoryTable">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Previous Zone</th>
+                    <th>Current Zone</th>
+                    <th>Restricted</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -159,14 +184,37 @@
       </div>
 
       <div class="panel">
-        <h2>Zone Traffic</h2>
-        <div id="zoneTraffic" class="chart-list"></div>
+        <h2>Recent Zone Events</h2>
+        <div id="zoneEventsEmpty" class="empty-state small-empty">
+          No recent zone transition events.
+        </div>
+        <div class="table-wrap zone-events-wrap">
+          <table id="zoneEventsTable">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Bike</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Restricted</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
-    <section class="panel">
-      <h2>Speed Trend</h2>
-      <div id="speedSeries" class="chart-list"></div>
+    <section class="grid-two">
+      <div class="panel">
+        <h2>Zone Traffic</h2>
+        <div id="zoneTraffic" class="chart-list"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Speed Trend</h2>
+        <div id="speedSeries" class="chart-list"></div>
+      </div>
     </section>
 
     <section class="panel">
